@@ -1,0 +1,7 @@
+---
+title: 1790s Spanish Missionization
+---
+
+The Spanish Missions and their agrarian practices had disrupted the carefully cultivated environment surrounding the Santa Cruz Mountains. Once carefully cultivated grasslands became livestock grazing and agricultural fields, immediately diminishing the availability of food for the Indigenous peoples. Game animals like deer became more difficult to find, whereas before Quiroste cultivation attracted them to these open grasslands. With the onset of food shortages, many Indigenous peoples found themselves reliant on Spanish food sources and supplies. Rizzo-Martinez supports this with the fact that "the vast majority of new arrivals received baptisms during the winter months" (55), during times of critically dangerous food scarcity.
+
+The Spanish settled Missions in San Francisco and Santa Clara in the late 1770s. They founded Mission Santa Cruz in 1791. By 1796, the majority of Indigenous peoples living around the Santa Cruz Mountains had relocated to the missions. Although many had resisted and fled Spanish missionization, Spanish presence and environmental impact disrupted this region greatly. Even for those who settled in the mission communities, mortality rates were devastating. "By the end of 1797 forty-six children had been born at the mission. Of these, thirty-five did not live to age ten, twenty-eight of them dying in infancy" (53).
