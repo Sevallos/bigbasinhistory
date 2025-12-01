@@ -7,13 +7,11 @@ objects_heading: "See the objects behind the stories"
 objects_intro: "Browse {count} objects featured in the stories."
 ---
 
-## Welcome to the Telar Demo Site
-This site showcases the features and capabilities of Telar (v.[{{ site.telar.version }}](https://github.com/UCSB-AMPLab/telar/releases/tag/v{{ site.telar.version }})). Build your own visual narrative exhibition by visiting:
+## Big Basin Redwoods: Its Indigenous Past, Its Preservation Campaign, and Its Impact as California's Oldest State Park
+![41718](https://github.com/user-attachments/assets/488bb6b6-b3c4-436b-8339-5743cbaf9691)
 
-- Our **[GitHub repository](https://github.com/UCSB-AMPLab/telar)**, where you can copy the template to create your own project
-- The **[documentation site](https://ampl.clair.ucsb.edu/telar-docs)**, where you can find guides and tutorials
-
-No installation is required: you can manage your content with Google Sheets and publish it for free on GitHub Pages.
-
-***Note:** To remove or replace this message, edit the `index.md` file in your repository.*
-
+# The stories below explore: 
+- What we know about the rich Indigenous past of the Santa Cruz Mountains;
+- The people that made up the 1900-1901 campaign to preserve the forest;
+- The early 1910s campaign to establish automobile roads into Big Basin;
+- The significance of nostalgia, memory, and recreation in establishing Big Basin's lasting identity.
