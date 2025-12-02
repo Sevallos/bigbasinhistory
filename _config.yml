@@ -2,13 +2,13 @@
 # https://github.com/UCSB-AMPLab/telar
 
 # Site Settings
-title: Big Basin Redwoods
+title: Big Basin Redwoods State Park Digital History
 description: "In May 1900, the Sempervirens Club of California launched the year-long campaign to preserve among the last old growth coastal redwoods in the Santa Cruz Mountains. In spring of 1902, California Redwood Park (later renamed Big Basin Redwoods State Park) officially opened to the public, becoming California's oldest state park. It was locals, primarily, that championed the movement to preserve Big Basin. Local writers, newspaper editors, school teachers, artists, photographers, clergymen, university professors, and even lumbermen rallied behind the shared mission to 'Save the Redwoods.' This Sempervirens Club digital history aims to illustrate how a group of concerned citizens, none of which were elites by any measure, founded California's oldest state park on democratic values and a shared belief in nature recreation for all, not just the wealthy elite."
 baseurl: "/bigbasinhistory"
 url: "https://sevallos.github.io"
 author: "Gabriel Sevallos"
 email: ""
-telar_theme: "santa-barbara" # Options: paisajes, neogranadina, santa-barbara, austin, or custom
+telar_theme: "austin" # Options: paisajes, neogranadina, santa-barbara, austin, or custom
 logo: "" # Path to logo image (optional, max 80px tall, 200-300px wide recommended)
 telar_language: "en" # Options: "en" (English), "es" (Español)
 
