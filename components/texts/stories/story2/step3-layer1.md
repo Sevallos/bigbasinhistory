@@ -1,5 +1,5 @@
 ---
-title: Nestled within the Santa Cruz Mountains
+title: "Nestled within the Santa Cruz Mountains"
 ---
 
 Big Basin's remoteness spared its redwoods from lumbermen for a few decades after the Gold Rush. Though technically owned by private lumber interests as early as 1861, the difficult mountainous terrain made it impossible for redwood extraction and timber profits until the mid-1880s. By then, Southern Pacific Railroad extended its tracks through the Santa Cruz Mountains and effectively opened up its forests for many eager lumber companies. Up until the turn of the twentieth-century, they purchased and acquired the valuable redwood forests for timber profits.[^1]: Traci Bliss, _Big Basin Redwood Forest: California’s Oldest State Park_ (Charleston, SC: _The History Press_, 2021) 9.
