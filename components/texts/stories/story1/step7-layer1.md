@@ -2,7 +2,8 @@
 title: Hummingbird, Coyote, and Eagle
 ---
 
-As documented in _We Are Not Animals_, the hummingbird, coyote, and eagle are culturally significant to the Ohlone-speaking nations of the Santa Cruz Mountains. The story passed down through oral traditions was that when the creator finished creating the world, these three were standing at the top of a high mountain during a great flood. "Eagle carried Hummingbird and Coyote and flew away to a still higher mountain," where they remained until the flood ended. In the aftermath, Eagle sent Coyote down from the mountain to live among the humans, and other tales credit Hummingbird with bringing fire to the people.[^1]
+As documented in _We Are Not Animals_, the hummingbird, coyote, and eagle are culturally significant to the Ohlone-speaking nations of the Santa Cruz Mountains. The story passed down through oral traditions was:
+"When this world was finished (by creator), the Eagle, Hummingbird, and Coyote were standing on top of a high mountain in Monterey county. The world was being flooded, and when the water rose to their feet, Eagle carried Hummingbird and Coyote and flew away to a still higher mountain. There the three stood until the water went down. Then Eagle sent Coyote down the mountain to seeif the world was dry. Coyote came back and said, “The whole world is dry.” Eagle said: “Go and look in the river. See what there is there.” Coyote did so and came back saying, “There is a beautiful girl.” Eagle then said, “She will be your wife, in order that people may be raised again.” Eagle gave Coyote a trowel of abalone shell and a stick to dig with. Coyote married the girl. Coyote’s children went out over the world and became the forefathers of the different tribes."[^1]
 
 ![AnnasHummingbirdPaloAltoNorvig](https://github.com/user-attachments/assets/875559fe-ee52-4565-b14e-96438cbceb3f) Male Anna's Hummingbird
 
