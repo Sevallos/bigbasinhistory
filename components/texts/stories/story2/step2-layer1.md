@@ -1,5 +1,5 @@
 ---
-Title: "Half a Century of Redwood Destruction"
+title: "Half a Century of Redwood Destruction"
 ---
 
 The story of redwood destruction did not begin in the Santa Cruz Mountains, but rather had been occurring throughout northern California since the Gold Rush. Around this time, Americans crossing into California witnessed redwoods and giant sequoias for the first time. Although many of them expressed their awe with the sheer size of these trees, they were swift to recognize the value of even a single tree for its timber. The abundance of these massive trees allured lumber mills and timber production companies with what appeared to be an inexhaustible supply.
