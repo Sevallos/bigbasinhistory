@@ -11,3 +11,4 @@ The San Jose Woman's Club (SJWC) attended this first CFWC meeting and internaliz
 
 [^1]: Cameron Binkley, “No Better Heritage Than Living Trees: Women's Clubs and Early Conservation in Humboldt 
 County,” _Western Historical Quarterly_, Volume 33, Issue 2 (Summer 2002): 182
+[^2]: Ibid.
