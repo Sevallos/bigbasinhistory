@@ -1,3 +1,7 @@
+---
+title: "Even Novelty & Awe Fell These Ancient Monuments"
+---
+
 <img width="1606" height="2162" alt="image" src="https://github.com/user-attachments/assets/b4559c36-7839-4499-86a0-c3b70bf20359" /> "Lithograph of Giant Sequoia Exhibition: Discovery Tree & General Noble Tree." Found in Wikimedia Commons uploaded by user Mgiganteus, scanned from J.J. Hewes, _Redwoods: The World's Largest Trees,_ (Gallery Books 1984).
 
 Despite how inexhaustible these forests appeared to be, this trend continued for the next few decades: Californians' demand for timber vastly exceeded the rate of its recovery. By the 1880s, "no unlogged stands [of trees] remained south or east of San Francisco..."[^1] Several decades after the Gold Rush, Californians exhausted more and more redwood forests to construct Santa Clara, Santa Cruz, San Jose, and many other surrounding communities. Their timber frenzy left behinds fields of stumps where forests once stood.
