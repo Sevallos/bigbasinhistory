@@ -2,7 +2,7 @@
 title: Mounting Pressure to Preserve Big Basin
 ---
 
-Many written and spoken accounts leading up to the passing of the bill were critical to gaining support and to presuading the state legislature. Even after the bill's passage, they continued to advocate for the continued preservation, management, and opening up of the park.:
+Many written and spoken accounts leading up to the passing of the bill were critical to gaining support and to presuading the state legislature. Even after the bill's passage, they continued to advocate for the continued preservation, management, and opening up of the park:
 
 “...to preserve [Big Basin] not only for ourselves and our friends, but for the State, for the world, for future ages."[^1] Louise C. Jones of the San Jose Woman's Club
 
