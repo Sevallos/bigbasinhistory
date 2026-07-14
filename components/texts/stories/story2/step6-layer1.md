@@ -6,6 +6,6 @@ With photographs provided by Andrew P. Hill, Carrie Stevens Walter wrote a full-
 
 Walter had a long career in education and writing. Up until the early 1890s, she worked as a school teacher before dedicating her work full-time to writing and publishing. She wrote numerous articles, short stories, and even poems that became well-known throughout Santa Clara County.[^1] Once the Sempervirens Club formed in May 1900, with the pledged support of the San Jose Woman's Club, Walter officially served as the Sempervirens Club's secretary. She remained a critical supporter of the club's goals up until her passing in 1907.
 
-[Walter_Portrait.tif](https://github.com/user-attachments/files/29988957/Walter_Portrait.tif) _Carrie Stevens Walter._ Unknown Photographer, c1890-1910. History San Jose Photographic Collection.
+<img width="3540" height="4638" alt="Walter_Portrait - Copy" src="https://github.com/user-attachments/assets/859f005d-34bd-4f93-a819-da1c3328d79e" /> _Carrie Stevens Walter._ Unknown Photographer, c1890-1910. History San Jose Photographic Collection.
 
 [^1]: Traci Bliss, 35.
