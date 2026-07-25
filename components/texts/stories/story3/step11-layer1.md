@@ -10,4 +10,4 @@ In California as well, a few years after the Sempervirens Club campaigned on aut
 
 [^1]: Anne Farrar Hyde, An American Vision: Far Western Landscape and National Culture: 1820-1920 (New York: New York University Press, 1990) 298.
 [^2]: Farmer, 112-113.
-[^2]: David Louter, Windshield Wilderness: Cars, Roads, and Nature in Washington’s National Parks (Seattle: University of Washington Press, 2006).
+[^3]: David Louter, Windshield Wilderness: Cars, Roads, and Nature in Washington’s National Parks (Seattle: University of Washington Press, 2006).
