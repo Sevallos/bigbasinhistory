@@ -33,5 +33,5 @@ Many written and spoken accounts leading up to the passing of the bill were crit
 [^2]: Frederick Clarke, “The Big Basin,” Sierra Club Bulletin vol. 3 (1900-1901), 223.
 [^3]: Josephine McCrackin, “About the Big Basin,” Overland Monthly, vol 36 (1900): 137.
 [^4]: Lillian H. Shuey, Among the Redwoods (San Francisco: The Whitaker & Ray Company, 1901) 9.
-[^5]: Arthur A. Taylor, California Redwood Park, Sometimes Called Sempervirens Park; An Appreciation (Sacramento: W.M. Richardson, 1912) Foreword.
+[^5]: Arthur A. Taylor, _California Redwood Park, Sometimes Called Sempervirens Park; An Appreciation_ (Sacramento: W.M. Richardson, 1912) Foreword.
 [^6]: DeVries, "Andrew Putnam Hill," 54.
