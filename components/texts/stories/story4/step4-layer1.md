@@ -7,6 +7,6 @@ Since Sempervirens Club members found it in 1901, Berry Creek Falls has remained
 
 Though Berry Creek Falls remains closed today after the 2020 fire (along with numerous other campgrounds and hiking trails), it has been a popular destination for Big Bason visitors for the past century.
 
-<img width="1024" height="780" alt="Berry_Creek_1901" src="https://github.com/user-attachments/assets/f2dde08a-acc0-4b4a-8923-94ea35deca4a" /> _Berry Creek Falls._ Photograph by Andrew P. Hill, c1901. History San Jose: Sempervirens Club Records.
+<img width="3000" height="4000" alt="Berry_Creek_Falls" src="https://github.com/user-attachments/assets/f5413505-1e82-4247-86e4-7c93dc3e690c" /> "Berry Creek Falls, Big Basin Redwoods State Park, California USA." Photo taken by Gnissah on Wikimedia, June 2011.
 
 [^1]: Arthur A. Taylor, _California Redwood Park, Sometimes Called Sempervirens Park; An Appreciation_ (Sacramento: W.M. Richardson, 1912), 61.
