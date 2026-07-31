@@ -6,10 +6,7 @@ Teacher, writer, and Sempervirens Club Secretary, Carrie Stevens Walter advocate
 > "Already lumber mills had been established and the cutting began within [Big Basin]s borders, but for the timely action of the Legislature this marvel of grandeur and beauty, this wonder of science that stands without a peer on earth, would very soon have been converted into shakes, railroad ties, and redwood lumber. Think of the sacrilege of it!"
 
 
-> "What words can describe the beauty, the grandeur, the solemn stillness, the wonderful fascination of this forest? They can be understood only by one who has visited it... Many of these trees are declared by scientists to be fifteen hundred to three thousand years old... Think of the antiquity here displayed! Contemporary with Ramses and the builders of Babylon; stalwart with the wisdom of ages [of] Abraham and Sarah... how these voiceless giants could light the darkness of our own prehistoric days, could their green tongues but break the ban of God's eternal silence!"
-
-
 > "The success of the movement to preserve the Big Basin redwoods in public park form, was due, in a great measure, to the untiring and unselfish efforts of the Sempervirens Club of California... This club includes many prominent ladies and gentlemen throughout the State. So thorough a campaign of education was prosecuted by this organization that when the measure for the preservation of the redwoods came up before the legislature, its passage was earnestly urged from every part of the State. [The 1901 park bill] passed both legislative houses, with only two dissenting votes."[^2]
 
 [^1]: Walter, "Saving the Big Basin" 32.
-[^2]: Walter, "The Preservation of the Big Basin," _The Overland Monthly,_ volume 40 (1902): 355, 358, 361.
+[^2]: Walter, "The Preservation of the Big Basin," _The Overland Monthly,_ volume 40 (1902): 355, 361.
