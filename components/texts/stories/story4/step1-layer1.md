@@ -6,6 +6,7 @@ When discussing the early history of the national parks, environmental historian
 
 As geologists and botanists visited Big Basin and confirmed the speculated ages of its oldest redwoods, members of the Sempervirens Club were quick to reference them for their preservation campaign. They argued that such ancient natural monuments should not be felled. By the early 1910s, many club members were reaching old age while a few had even passed. The sheer age of these trees filled Big Basin's appreciators with that sense of feeling insignificant, and their cause allowed them to participate in preserving such significant ancient wonders.
 
+Carrie Stevens Walter in _The Overland Monthly_:
 > "What words can describe the beauty, the grandeur, the solemn stillness, the wonderful fascination of this forest? They can be understood only by one who has visited it... Many of these trees are declared by scientists to be fifteen hundred to three thousand years old... Think of the antiquity here displayed! Contemporary with Ramses and the builders of Babylon; stalwart with the wisdom of ages [of] Abraham and Sarah... how these voiceless giants could light the darkness of our own prehistoric days, could their green tongues but break the ban of God's eternal silence!"[^2]
 
 D. M. Delmas was a very well-known orator in California who on multiple occasions spoke in support of the Sempervirens Club's efforts to preserve Big Basin:
