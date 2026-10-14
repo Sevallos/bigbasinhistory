@@ -1,10 +1,7 @@
 ---
 layout: index
 title: Home
-stories_heading: "Explore the stories"
 stories_intro: ""
-objects_heading: "See the objects behind the stories"
-objects_intro: "Browse {count} objects featured in the stories."
 ---
 
 ## Big Basin Redwoods: Its Indigenous Past, Its Preservation Campaign, and Its Impact as California's Oldest State Park

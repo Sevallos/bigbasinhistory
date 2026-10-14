@@ -1,65 +1,94 @@
 #!/usr/bin/env python3
 """
-Generate IIIF tiles and manifests from source images
+Generate IIIF Image Tiles and Manifests
 
-Uses iiif library (Python) to generate static IIIF Level 0 tiles.
-Alternative to Bodleian tool, simpler for basic use cases.
+IIIF (International Image Interoperability Framework) is a standard for
+serving high-resolution images over the web. Instead of loading one
+enormous image file, the image is sliced into small tiles at multiple
+zoom levels. The viewer requests only the tiles visible on screen,
+enabling smooth deep-zoom into large images without overwhelming the
+browser or network.
 
-Version: v0.6.1-beta
+Telar supports two ways of serving images: external (the object's
+source_url points to an existing IIIF server, e.g. a library's digital
+collection — no tile generation needed) and self-hosted (the user
+places image files in telar-content/objects/ and this script generates
+static IIIF Level 0 tiles and a Presentation API v3 manifest for each
+one).
+
+The script reads objects.json to find which objects need tiles (those
+without an external source URL), locates the source image for each,
+and generates a directory of tile files plus a manifest.json that
+the viewer can load. It handles format conversion (PNG, HEIC,
+WebP, TIFF to JPEG), EXIF orientation correction, and transparency
+removal.
+
+The --base-url flag is important: tiles must be generated with the
+correct URL prefix so the manifest points to the right location. For
+local development, use the localhost URL; for production, use the
+site's public URL.
+
+Tile generation backends:
+  - libvips (preferred): 28x faster. Uses `vips dzsave --layout iiif3`.
+    Install: brew install vips (macOS) / apt-get install libvips-dev (Linux)
+  - iiif library (fallback): Pure Python, no system dependencies.
+    Install: pip install iiif
+
+Version: v1.8.0
 """
 
 import os
 import sys
+import re
 import json
 import shutil
 from pathlib import Path
 
-def check_dependencies():
-    """Check if required dependencies are installed"""
-    try:
-        from iiif.static import IIIFStatic
-        from PIL import Image, ImageOps
-    except ImportError as e:
-        print("❌ Missing required dependencies!")
-        print("\nPlease install:")
-        print("  pip install iiif Pillow")
-        print("\nOr use the provided requirements file:")
-        print("  pip install -r requirements.txt")
-        return False
+# Object IDs become filesystem path components (tile dirs, rmtree targets), so
+# they must be a safe filename token. Same allowlist shape as the audio pipeline.
+_SAFE_OBJECT_ID = re.compile(r'^[A-Za-z0-9_-]+$')
 
-    # Check for optional HEIC support
-    try:
-        from pillow_heif import register_heif_opener
-    except ImportError:
-        print("⚠️  pillow-heif not installed - HEIC/HEIF files will not be supported")
-        print("   To enable HEIC support: pip install pillow-heif")
-        print()
+from iiif_utils import (
+    check_dependencies, preprocess_image,
+    generate_tiles_libvips, copy_base_image, create_single_canvas_manifest,
+    fix_fallback_region_sizes, generate_full_max,
+)
+from telar.csv_utils import IMAGE_EXTENSIONS_ORDERED
 
-    return True
 
-def get_base_url_from_config():
-    """
-    Read url and baseurl from _config.yml and combine them.
+# ---------------------------------------------------------------------------
+# iiif library backend (fallback)
+# ---------------------------------------------------------------------------
 
-    Returns:
-        Combined URL (e.g., "https://example.com/baseurl") or None if config can't be read
-    """
-    try:
-        import yaml
-        with open('_config.yml', 'r') as f:
-            config = yaml.safe_load(f)
+def _generate_tiles_iiif(processed_path, tiles_dir, object_id, base_url):
+    """Generate IIIF tiles using the Python iiif library."""
+    from iiif.static import IIIFStatic
 
-        url = config.get('url', '')
-        baseurl = config.get('baseurl', '')
+    parent_dir = tiles_dir.parent
 
-        if url:
-            return url + baseurl
-        return None
-    except Exception as e:
-        # Silently fail - caller will use fallback
-        return None
+    sg = IIIFStatic(
+        dst=str(parent_dir),
+        prefix=f"{base_url}/iiif/objects",
+        tilesize=512,
+        api_version='3.0'
+    )
+    sg.generate(src=str(processed_path), identifier=object_id)
 
-def generate_iiif_for_image(image_path, output_dir, object_id, base_url):
+    # Canonicalize cropped-region tile directories — see fix_fallback_region_sizes's
+    # docstring in iiif_utils.py for why the library's own output needs this patch.
+    fix_fallback_region_sizes(tiles_dir)
+
+    # full/max/0/default.jpg — the canonical v3 full-image request, which
+    # OpenSeadragon also uses for the pyramid's whole-image top level. The
+    # iiif library does not write it; every backend must provide it.
+    generate_full_max(processed_path, tiles_dir)
+
+
+# ---------------------------------------------------------------------------
+# Shared post-generation
+# ---------------------------------------------------------------------------
+
+def generate_iiif_for_image(image_path, output_dir, object_id, base_url, backend):
     """
     Generate IIIF tiles for a single image
 
@@ -68,272 +97,29 @@ def generate_iiif_for_image(image_path, output_dir, object_id, base_url):
         output_dir: Output directory for tiles (parent of object_id directory)
         object_id: Identifier for this object
         base_url: Base URL for the site
+        backend: 'libvips' or 'iiif'
     """
-    from iiif.static import IIIFStatic
-    from PIL import Image, ImageOps
-    import tempfile
-
-    # Register HEIF plugin for HEIC/HEIF support if available
-    try:
-        from pillow_heif import register_heif_opener
-        register_heif_opener()
-    except ImportError:
-        pass  # HEIC support unavailable
-
-    # Preprocess PNG images with transparency (RGBA) to RGB
-    # because IIIF library saves as JPEG which doesn't support alpha
-    processed_image_path = image_path
-    temp_file = None
-
-    try:
-        img = Image.open(image_path)
-
-        # Apply EXIF orientation if present (thanks to Tara for reporting)
-        # This ensures portrait photos from phones/cameras display correctly
-        img_before_exif = img
-        img = ImageOps.exif_transpose(img)
-        if img is None:
-            # No EXIF orientation data, use original
-            img = img_before_exif
-        elif img != img_before_exif:
-            print(f"  ↻ Applied EXIF orientation correction")
-
-        # Check if image has EXIF orientation metadata (any value other than 1 = normal)
-        exif = img_before_exif.getexif()
-        has_exif_orientation = exif and 274 in exif and exif[274] != 1
-
-        # Convert image to RGB if needed and create JPEG for IIIF processing
-        needs_conversion = False
-        converted_img = img
-
-        # Handle transparency/alpha channel modes
-        if img.mode in ['RGBA', 'LA']:
-            print(f"  ⚠️  Converting {img.mode} to RGB (removing transparency)")
-            rgb_img = Image.new('RGB', img.size, (255, 255, 255))
-            rgb_img.paste(img, mask=img.split()[-1])  # Use alpha channel as mask
-            converted_img = rgb_img
-            needs_conversion = True
-
-        # Handle palette mode (GIF, some PNGs)
-        elif img.mode == 'P':
-            print(f"  ⚠️  Converting palette mode to RGB")
-            converted_img = img.convert('RGB')
-            needs_conversion = True
-
-        # Handle other uncommon modes
-        elif img.mode not in ['RGB', 'L']:
-            print(f"  ⚠️  Converting {img.mode} mode to RGB")
-            converted_img = img.convert('RGB')
-            needs_conversion = True
-
-        # Check if we need to convert to JPEG (for non-JPEG formats)
-        # OR if EXIF orientation metadata present (need to save the transposed image)
-        file_ext = image_path.suffix.lower()
-        if has_exif_orientation or needs_conversion or file_ext not in ['.jpg', '.jpeg']:
-            # Show format-specific message
-            if has_exif_orientation and file_ext in ['.jpg', '.jpeg'] and not needs_conversion:
-                print(f"  💾 Saving rotated image for IIIF processing")
-            elif file_ext in ['.heic', '.heif']:
-                print(f"  ⚠️  Converting HEIC to JPEG for IIIF processing")
-            elif file_ext == '.webp':
-                print(f"  ⚠️  Converting WebP to JPEG for IIIF processing")
-            elif file_ext in ['.tif', '.tiff']:
-                print(f"  ⚠️  Converting TIFF to JPEG for IIIF processing")
-            elif file_ext == '.png' and not needs_conversion:
-                print(f"  ⚠️  Converting PNG to JPEG for IIIF processing")
-
-            # Save to temporary JPEG file
-            temp_file = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False)
-            converted_img.save(temp_file.name, 'JPEG', quality=95)
-            processed_image_path = Path(temp_file.name)
-            temp_file.close()
-    except Exception as e:
-        print(f"  ⚠️  Error preprocessing image: {e}")
-        # Continue with original image
-
-    # Note: iiif library creates a subdirectory with the identifier name
-    # We pass the parent directory, and it creates parent_dir/object_id/
     parent_dir = output_dir.parent
     tiles_dir = parent_dir / object_id
 
+    # Preprocess image (shared by both backends)
+    processed_path, temp_path = preprocess_image(image_path)
+
     try:
-        # Create static generator
-        # Note: iiif library appends the identifier to the prefix, so we use objects/ not objects/object_id/
-        sg = IIIFStatic(
-            dst=str(parent_dir),
-            prefix=f"{base_url}/iiif/objects",  # iiif library will append /{identifier}
-            tilesize=512,
-            api_version='3.0'
-        )
+        if backend == 'libvips':
+            generate_tiles_libvips(processed_path, tiles_dir, object_id, base_url)
+        else:
+            _generate_tiles_iiif(processed_path, tiles_dir, object_id, base_url)
 
-        # Generate tiles (this creates parent_dir/object_id/)
-        sg.generate(src=str(processed_image_path), identifier=object_id)
-
-        # Copy full-resolution image for UniversalViewer BEFORE cleaning up temp file
-        # UniversalViewer expects a base image at the path declared in the manifest
-        copy_base_image(processed_image_path, tiles_dir, object_id)
+        # Copy full-resolution image before cleaning up temp file
+        copy_base_image(processed_path, tiles_dir, object_id)
     finally:
         # Clean up temporary file if created
-        if temp_file and Path(temp_file.name).exists():
-            Path(temp_file.name).unlink()
+        if temp_path and Path(temp_path).exists():
+            Path(temp_path).unlink()
 
-    # Create manifest wrapper for UniversalViewer
-    create_manifest(tiles_dir, object_id, image_path, base_url)
-
-def copy_base_image(source_image_path, output_dir, object_id):
-    """
-    Copy the full-resolution image to the location expected by UniversalViewer
-
-    UniversalViewer tries to load the base image at {object_id}/{object_id}.jpg
-    which is declared in the manifest body.id. IIIF Level 0 doesn't automatically
-    create this file, so we copy it manually.
-
-    Args:
-        source_image_path: Path to the processed source image
-        output_dir: Output directory for IIIF tiles
-        object_id: Object identifier
-    """
-    from PIL import Image, ImageOps
-
-    dest_path = output_dir / f"{object_id}.jpg"
-
-    try:
-        # Open and save as JPEG (in case source was PNG or other format)
-        img = Image.open(source_image_path)
-
-        # Apply EXIF orientation if present
-        img_before_exif = img
-        img = ImageOps.exif_transpose(img)
-        if img is None:
-            # No EXIF orientation data, use original
-            img = img_before_exif
-
-        if img.mode in ('RGBA', 'LA', 'P'):
-            # Convert to RGB if necessary
-            rgb_img = Image.new('RGB', img.size, (255, 255, 255))
-            if img.mode == 'P':
-                img = img.convert('RGBA')
-            if img.mode in ('RGBA', 'LA'):
-                rgb_img.paste(img, mask=img.split()[-1])  # Use alpha channel as mask
-            img = rgb_img
-
-        img.save(dest_path, 'JPEG', quality=95)
-        print(f"  ✓ Copied base image to {object_id}.jpg")
-    except Exception as e:
-        print(f"  ⚠️  Error copying base image: {e}")
-
-def create_manifest(output_dir, object_id, image_path, base_url):
-    """
-    Create IIIF Presentation API manifest for UniversalViewer
-
-    Args:
-        output_dir: Directory containing info.json
-        object_id: Object identifier
-        image_path: Original image path
-        base_url: Base URL for the site
-    """
-    from PIL import Image
-
-    # Read info.json to get image dimensions
-    info_path = output_dir / 'info.json'
-    if not info_path.exists():
-        print(f"  ⚠️  info.json not found, skipping manifest creation")
-        return
-
-    with open(info_path, 'r') as f:
-        info = json.load(f)
-
-    width = info.get('width', 0)
-    height = info.get('height', 0)
-
-    # Load metadata from objects.json if available
-    metadata = load_object_metadata(object_id)
-
-    # Create IIIF Presentation v3 manifest
-    manifest = {
-        "@context": "http://iiif.io/api/presentation/3/context.json",
-        "id": f"{base_url}/iiif/objects/{object_id}/manifest.json",
-        "type": "Manifest",
-        "label": {
-            "en": [metadata.get('title', object_id)]
-        },
-        "metadata": [],
-        "summary": {
-            "en": [metadata.get('description', '')]
-        } if metadata.get('description') else None,
-        "items": [
-            {
-                "id": f"{base_url}/iiif/objects/{object_id}/canvas",
-                "type": "Canvas",
-                "label": {
-                    "en": [metadata.get('title', object_id)]
-                },
-                "height": height,
-                "width": width,
-                "items": [
-                    {
-                        "id": f"{base_url}/iiif/objects/{object_id}/page",
-                        "type": "AnnotationPage",
-                        "items": [
-                            {
-                                "id": f"{base_url}/iiif/objects/{object_id}/annotation",
-                                "type": "Annotation",
-                                "motivation": "painting",
-                                "body": {
-                                    "id": f"{base_url}/iiif/objects/{object_id}/{object_id}.jpg",
-                                    "type": "Image",
-                                    "format": "image/jpeg",
-                                    "height": height,
-                                    "width": width,
-                                    "service": [
-                                        {
-                                            "id": f"{base_url}/iiif/objects/{object_id}",
-                                            "type": "ImageService3",
-                                            "profile": "level0"
-                                        }
-                                    ]
-                                },
-                                "target": f"{base_url}/iiif/objects/{object_id}/canvas"
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    }
-
-    # Add metadata fields
-    if metadata.get('creator'):
-        manifest['metadata'].append({
-            "label": {"en": ["Creator"]},
-            "value": {"en": [metadata['creator']]}
-        })
-    if metadata.get('period'):
-        manifest['metadata'].append({
-            "label": {"en": ["Period"]},
-            "value": {"en": [metadata['period']]}
-        })
-
-    # Write manifest
-    manifest_path = output_dir / 'manifest.json'
-    with open(manifest_path, 'w') as f:
-        json.dump(manifest, f, indent=2)
-
-    print(f"  ✓ Created manifest.json")
-
-def load_object_metadata(object_id):
-    """Load metadata for an object from objects.json"""
-    try:
-        objects_json = Path('_data/objects.json')
-        if objects_json.exists():
-            with open(objects_json, 'r') as f:
-                objects = json.load(f)
-                for obj in objects:
-                    if obj.get('object_id') == object_id:
-                        return obj
-    except Exception as e:
-        print(f"  ⚠️  Could not load metadata: {e}")
-    return {}
+    # Create manifest wrapper for the viewer
+    create_single_canvas_manifest(tiles_dir, object_id, image_path, base_url)
 
 def load_objects_needing_tiles():
     """
@@ -365,6 +151,12 @@ def load_objects_needing_tiles():
             if not object_id:
                 continue
 
+            # Reject object_ids that aren't a safe filename token before they
+            # reach any tile-directory write or rmtree downstream.
+            if not _SAFE_OBJECT_ID.match(str(object_id)):
+                print(f"  [WARNING] Skipping object with unsafe object_id: {object_id!r}")
+                continue
+
             # Need tiles if source URL is empty or not a URL
             if not source_url or not source_url.startswith('http'):
                 objects_needing_tiles.append(object_id)
@@ -377,7 +169,13 @@ def load_objects_needing_tiles():
 
 def find_image_for_object(object_id, source_dir):
     """
-    Find image file for a given object_id, checking multiple extensions (case-insensitive)
+    Find image file for a given object_id, trying each extension in both cases
+
+    The stem is the object_id exactly as written: only the extension is tried
+    in both cases. A file whose name differs from the object_id in any other
+    way is not found here, and on a case-sensitive filesystem that includes a
+    difference of capitalisation. macOS hides that; the build runs on Linux.
+    Naming the near-match is `objects.py`'s job, at validation time.
 
     Args:
         object_id: Object identifier
@@ -387,54 +185,92 @@ def find_image_for_object(object_id, source_dir):
         Path object if found, None otherwise
     """
     source_path = Path(source_dir)
-    # Priority order: Common formats first, then newer/specialized formats
-    image_extensions = ['.jpg', '.jpeg', '.png', '.heic', '.heif', '.webp', '.tif', '.tiff']
 
-    for ext in image_extensions:
+    for ext in IMAGE_EXTENSIONS_ORDERED:
         # Check both lowercase and uppercase extensions
         for case_ext in [ext, ext.upper()]:
             image_path = source_path / f"{object_id}{case_ext}"
             if image_path.exists():
-                return image_path
+                return _as_named_on_disk(image_path)
 
     return None
 
-def generate_iiif_tiles(source_dir='components/images', output_dir='iiif/objects', base_url=None):
+
+def _as_named_on_disk(path):
+    """The same file, under the name the directory holds it by.
+
+    On a case-insensitive filesystem `calib.png` exists when the file is
+    `calib.PNG`, and the name printed would be one the file does not have,
+    and not the one the Linux build prints.
     """
-    Generate IIIF tiles for objects listed in objects.json
+    try:
+        entries = [entry.name for entry in path.parent.iterdir()]
+    except OSError:
+        return path
+    if path.name in entries:
+        return path
+    folded = [name for name in entries if name.lower() == path.name.lower()]
+    return path.with_name(folded[0]) if len(folded) == 1 else path
+
+def get_base_url_from_config():
+    """
+    Read url and baseurl from _config.yml and combine them.
+
+    Returns:
+        Combined URL (e.g., "https://example.com/baseurl") or None if config can't be read
+    """
+    try:
+        import yaml
+        with open('_config.yml', 'r') as f:
+            config = yaml.safe_load(f)
+
+        url = config.get('url', '')
+        baseurl = config.get('baseurl', '')
+
+        if url:
+            return url + baseurl
+        return None
+    except Exception as e:
+        # Silently fail - caller will use fallback
+        return None
+
+def _resolve_base_url(base_url):
+    """
+    Settle the base URL the manifests will carry.
+
+    Priority: the --base-url flag, then _config.yml, then the SITE_URL
+    environment variable, then a localhost default.
 
     Args:
-        source_dir: Directory containing source images (default: components/images)
-        output_dir: Directory to output IIIF tiles and manifests (default: iiif/objects)
-        base_url: Base URL for the site
+        base_url: Base URL passed by the caller, or None
+
+    Returns:
+        The base URL to generate with
     """
-    if not check_dependencies():
-        return False
+    if base_url:
+        return base_url
+    return (get_base_url_from_config() or
+            os.environ.get('SITE_URL') or
+            'http://localhost:4000')
 
-    source_path = Path(source_dir)
-    output_path = Path(output_dir)
 
-    if not source_path.exists():
-        print(f"❌ Source directory {source_dir} does not exist.")
-        print(f"   Please create it and add images, or use --source-dir to specify a different location.")
-        return False
+def _print_run_banner(source_dir, output_dir, base_url, backend):
+    """
+    Print the header naming what this run is about to do.
 
-    # Get base URL from config or environment
-    # Priority: --base-url flag > _config.yml > SITE_URL env var > localhost default
-    if not base_url:
-        base_url = (get_base_url_from_config() or
-                    os.environ.get('SITE_URL') or
-                    'http://localhost:4000')
-
-    # Create output directory
-    output_path.mkdir(parents=True, exist_ok=True)
-
+    Args:
+        source_dir: Directory containing source images
+        output_dir: Directory the tiles and manifests go to
+        base_url: Base URL the manifests will carry
+        backend: 'libvips' or 'iiif'
+    """
     print("=" * 60)
     print("IIIF Tile Generator for Telar")
     print("=" * 60)
     print(f"Source: {source_dir}")
     print(f"Output: {output_dir}")
     print(f"Base URL: {base_url}")
+    print(f"Backend: {backend}" + (" (28x faster)" if backend == 'libvips' else " (fallback)"))
 
     # Show helpful message for local development
     if base_url and ('github.io' in base_url or base_url.startswith('https://')):
@@ -448,16 +284,166 @@ def generate_iiif_tiles(source_dir='components/images', output_dir='iiif/objects
     print("=" * 60)
     print()
 
+
+def _select_objects(filter_objects):
+    """
+    Choose the objects this run will generate tiles for.
+
+    Args:
+        filter_objects: Comma-separated string of object IDs, or None for all
+
+    Returns:
+        list: Object IDs to process, empty when there is nothing to do
+        None: objects.json could not be read
+    """
     # Load objects from objects.json (CSV-driven approach)
-    print("📋 Loading objects from objects.json...")
     objects_needing_tiles = load_objects_needing_tiles()
+
+    if objects_needing_tiles is None:
+        return None
+
+    if not objects_needing_tiles:
+        print("ℹ️  No objects need IIIF tiles (all use external manifests)")
+        return []
+
+    # Filter to requested object IDs if --objects was provided
+    if filter_objects:
+        requested = {o.strip() for o in filter_objects.split(',')}
+        objects_needing_tiles = [o for o in objects_needing_tiles if o in requested]
+        if not objects_needing_tiles:
+            print(f"ℹ️  No matching objects found for: {filter_objects}")
+
+    return objects_needing_tiles
+
+
+def _generate_for_object(image_file, object_output, object_id, base_url, backend):
+    """
+    Run one source file through the pipeline its format calls for.
+
+    Args:
+        image_file: Path to the source file
+        object_output: Output directory for this object
+        object_id: Object identifier
+        base_url: Base URL for the site
+        backend: 'libvips' or 'iiif'
+
+    Returns:
+        'processed' or 'skipped'
+    """
+    # PDF files get multi-page processing; everything else is a single image
+    if image_file.suffix.lower() == '.pdf':
+        try:
+            from process_pdf import process_pdf_object
+            process_pdf_object(image_file, object_output, object_id, base_url)
+            print(f"  ✓ Generated multi-page tiles for {object_id}")
+            return 'processed'
+        except ImportError:
+            print(f"  ❌ PyMuPDF not installed — cannot process {image_file.name}")
+            return 'skipped'
+
+    generate_iiif_for_image(image_file, object_output, object_id, base_url, backend)
+    print(f"  ✓ Generated tiles for {object_id}")
+    return 'processed'
+
+
+def _process_object(object_id, source_dir, output_path, base_url, backend):
+    """
+    Find one object's source file and rebuild its tile tree from scratch.
+
+    A failure here is one object's, not the run's: it is reported and the
+    caller moves on to the next.
+
+    Args:
+        object_id: Object identifier
+        source_dir: Directory to search for the source file
+        output_path: Parent directory of every object's tile tree
+        base_url: Base URL for the site
+        backend: 'libvips' or 'iiif'
+
+    Returns:
+        'processed', 'skipped', or 'rejected' for an out-of-bounds output path,
+        which counts as neither
+    """
+    # Find image file for this object
+    image_file = find_image_for_object(object_id, source_dir)
+
+    if not image_file:
+        print(f"  ⚠️  No image file found for {object_id}")
+        checked = ', '.join(IMAGE_EXTENSIONS_ORDERED)
+        print(f"      Checked {object_id} with each of: {checked}")
+        print(f"      The name before the extension must match {object_id} exactly, including capitalisation.")
+        print()
+        return 'skipped'
+
+    print(f"  Found: {image_file.name}")
+
+    # Output directory for this object
+    object_output = output_path / object_id
+
+    # Boundary guard (belt-and-suspenders): never rmtree/mkdir outside the
+    # output directory, whatever the object_id resolved to.
+    if not object_output.resolve().is_relative_to(output_path.resolve()):
+        print(f"  [WARNING] Skipping object with out-of-bounds output path: {object_id!r}")
+        print()
+        return 'rejected'
+
+    try:
+        # Remove existing output if present
+        if object_output.exists():
+            shutil.rmtree(object_output)
+
+        object_output.mkdir(parents=True, exist_ok=True)
+
+        outcome = _generate_for_object(image_file, object_output, object_id,
+                                       base_url, backend)
+        print()
+        return outcome
+
+    except Exception as e:
+        print(f"  ❌ Error processing {image_file.name}: {e}")
+        import traceback
+        traceback.print_exc()
+        print()
+        return 'skipped'
+
+
+def generate_iiif_tiles(source_dir='telar-content/objects', output_dir='iiif/objects', base_url=None, filter_objects=None):
+    """
+    Generate IIIF tiles for objects listed in objects.json
+
+    Args:
+        source_dir: Directory containing source images (default: telar-content/objects)
+        output_dir: Directory to output IIIF tiles and manifests (default: iiif/objects)
+        base_url: Base URL for the site
+        filter_objects: Comma-separated string of object IDs to process (default: None = all)
+    """
+    backend = check_dependencies()
+    if not backend:
+        return False
+
+    source_path = Path(source_dir)
+    output_path = Path(output_dir)
+
+    if not source_path.exists():
+        print(f"❌ Source directory {source_dir} does not exist.")
+        print(f"   Please create it and add images, or use --source-dir to specify a different location.")
+        return False
+
+    base_url = _resolve_base_url(base_url)
+
+    # Create output directory
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    _print_run_banner(source_dir, output_dir, base_url, backend)
+
+    print("📋 Loading objects from objects.json...")
+    objects_needing_tiles = _select_objects(filter_objects)
 
     if objects_needing_tiles is None:
         print("❌ Could not load objects.json")
         return False
 
     if not objects_needing_tiles:
-        print("ℹ️  No objects need IIIF tiles (all use external manifests)")
         return True
 
     print(f"✓ Found {len(objects_needing_tiles)} objects needing tiles\n")
@@ -469,42 +455,11 @@ def generate_iiif_tiles(source_dir='components/images', output_dir='iiif/objects
     for i, object_id in enumerate(objects_needing_tiles, 1):
         print(f"[{i}/{len(objects_needing_tiles)}] Processing {object_id}...")
 
-        # Find image file for this object
-        image_file = find_image_for_object(object_id, source_dir)
-
-        if not image_file:
-            print(f"  ⚠️  No image file found for {object_id}")
-            print(f"      Checked: {object_id}.jpg, .jpeg, .png, .heic, .heif, .webp, .tif, .tiff (case-insensitive)")
-            skipped_count += 1
-            print()
-            continue
-
-        print(f"  Found: {image_file.name}")
-
-        # Output directory for this object
-        object_output = output_path / object_id
-
-        try:
-            # Remove existing output if present
-            if object_output.exists():
-                shutil.rmtree(object_output)
-
-            object_output.mkdir(parents=True, exist_ok=True)
-
-            # Generate IIIF tiles and manifest
-            generate_iiif_for_image(image_file, object_output, object_id, base_url)
-
-            print(f"  ✓ Generated tiles for {object_id}")
+        outcome = _process_object(object_id, source_dir, output_path, base_url, backend)
+        if outcome == 'processed':
             processed_count += 1
-            print()
-
-        except Exception as e:
-            print(f"  ❌ Error processing {image_file.name}: {e}")
-            import traceback
-            traceback.print_exc()
+        elif outcome == 'skipped':
             skipped_count += 1
-            print()
-            continue
 
     print("=" * 60)
     print("✓ IIIF generation complete!")
@@ -524,8 +479,8 @@ def main():
     )
     parser.add_argument(
         '--source-dir',
-        default='components/images',
-        help='Source directory containing images (default: components/images)'
+        default='telar-content/objects',
+        help='Source directory containing images and PDFs (default: telar-content/objects)'
     )
     parser.add_argument(
         '--output-dir',
@@ -536,13 +491,19 @@ def main():
         '--base-url',
         help='Base URL for the site (default: from _config.yml or http://localhost:4000)'
     )
+    parser.add_argument(
+        '--objects',
+        default=None,
+        help='Comma-separated object IDs to process (default: all objects needing tiles)'
+    )
 
     args = parser.parse_args()
 
     success = generate_iiif_tiles(
         source_dir=args.source_dir,
         output_dir=args.output_dir,
-        base_url=args.base_url
+        base_url=args.base_url,
+        filter_objects=args.objects,
     )
 
     sys.exit(0 if success else 1)

@@ -1,23 +1,71 @@
 #!/usr/bin/env python3
 """
-Fetch demo content from content.telar.org
+Fetch Demo Content from content.telar.org
 
-Downloads the demo content bundle based on site version and language.
-Demo content is stored in _demo_content/ (gitignored, never committed).
+When a new Telar site is first set up, it has no real content yet — no
+objects, no stories, no glossary terms. Demo content fills this gap by
+providing sample data that shows how the site will look and behave once
+real content is added. Users can toggle it on or off with the
+include_demo_content setting in _config.yml.
 
-When include_demo_content is false, cleans up _demo_content/ directory.
+This script downloads a demo content bundle from content.telar.org,
+Telar's content distribution server. Each bundle is version-specific
+and language-specific (English or Spanish), so the script reads the
+site's current version and language from _config.yml and fetches the
+matching bundle. If an exact version match is not available, it falls
+back to the closest compatible version.
 
-Version: v0.6.0-beta
+The bundle is saved to _demo_content/ (gitignored, never committed).
+The csv_to_json.py build script (telar package) merges demo content
+into the JSON data alongside the user's real content, marking demo
+items with a _demo flag so the site can style them differently.
+
+Version: v1.8.0
 """
 
 import json
+import re
 import shutil
+import ssl
 import sys
 import urllib.request
 import urllib.error
 from pathlib import Path
 import yaml
 
+from pipeline_utils import capped_read, MAX_VERSIONS_BYTES, MAX_BUNDLE_BYTES
+
+# macOS Python 3.13+ (python.org installer) does not link to the system
+# certificate store, causing HTTPS fetches to fail. Use certifi's bundle when
+# available so local builds work out of the box. No effect on Linux/CI.
+try:
+    import certifi
+    urllib.request.install_opener(
+        urllib.request.build_opener(
+            urllib.request.HTTPSHandler(
+                context=ssl.create_default_context(cafile=certifi.where())
+            )
+        )
+    )
+except ImportError:
+    pass
+
+
+# The version spellings a site's _config.yml can hold, and the release the
+# demo bundles are keyed by. Kept deliberately close to the upgrade engine's
+# grammar in telar_upgrade.py: one optional git-tag prefix, three components
+# with no leading zeros, ASCII digits only, and -beta preserved in the input
+# because a site really is on "1.0.0-beta" -- it is dropped from the group
+# this script uses, since bundles are published per release number.
+_SITE_VERSION_RE = re.compile(
+    r'[vV]?'
+    r'(?P<release>'
+    r'(?:0|[1-9][0-9]*)\.'
+    r'(?:0|[1-9][0-9]*)\.'
+    r'(?:0|[1-9][0-9]*)'
+    r')'
+    r'(?:-beta)?'
+)
 
 def load_config():
     """
@@ -30,7 +78,7 @@ def load_config():
     try:
         config_path = Path('_config.yml')
         if not config_path.exists():
-            print("Error: _config.yml not found")
+            print("❌ Error: _config.yml not found")
             print("   Run this script from your Telar site root directory")
             return None
 
@@ -41,14 +89,26 @@ def load_config():
         story_interface = config.get('story_interface', {})
         enabled = story_interface.get('include_demo_content', False)
 
-        # Get version and strip -beta suffix
+        # Get version, as the release the demo bundles are keyed by.
         telar = config.get('telar', {})
-        version = telar.get('version', '0.6.0')
-        # Remove -beta, -alpha suffixes for version matching
-        version = version.split('-')[0]
+        raw_version = telar.get('version', '0.6.0')
+        match = (_SITE_VERSION_RE.fullmatch(raw_version)
+                 if isinstance(raw_version, str) else None)
+        version = match.group('release') if match else None
 
         # Get language
         language = config.get('telar_language', 'en')
+
+        # Validate language and version before they are interpolated into the
+        # demo-bundle URL, so neither can carry path-traversal sequences or
+        # unexpected characters. Unknown language falls back to 'en'; an
+        # unparseable version aborts the (optional) demo-content fetch.
+        if language not in ('en', 'es'):
+            print(f"[WARNING] Unrecognised telar_language '{language}'; defaulting to 'en'")
+            language = 'en'
+        if version is None:
+            print(f"[WARNING] Could not parse version '{raw_version}'; skipping demo-content fetch")
+            return None
 
         return {
             'enabled': enabled,
@@ -57,7 +117,7 @@ def load_config():
         }
 
     except Exception as e:
-        print(f"Error reading _config.yml: {e}")
+        print(f"❌ Error reading _config.yml: {e}")
         return None
 
 
@@ -76,7 +136,7 @@ def cleanup_demo_content():
             print(f"Cleaned up {demo_dir}/")
             return True
         except Exception as e:
-            print(f"Warning: Could not remove {demo_dir}/: {e}")
+            print(f"⚠️  Warning: Could not remove {demo_dir}/: {e}")
             return False
 
     return True
@@ -95,7 +155,7 @@ def fetch_versions_index():
 
     try:
         with urllib.request.urlopen(versions_url, timeout=10) as response:
-            data = json.loads(response.read().decode('utf-8'))
+            data = json.loads(capped_read(response, MAX_VERSIONS_BYTES).decode('utf-8'))
             return data.get('versions', [])
 
     except Exception:
@@ -121,12 +181,21 @@ def find_best_version(site_version, available_versions):
         None: If no compatible version exists
     """
     def parse_version(v):
-        parts = v.split('.')
-        return tuple(int(p) for p in parts)
+        # Looser than _SITE_VERSION_RE: rows from the remote versions.json
+        # are compared as numbers, so short forms are padded below; a
+        # repeated prefix is rejected.
+        match = re.fullmatch(r'[vV]?(?P<number>[0-9]+(?:\.[0-9]+){0,2})', v)
+        if match is None:
+            raise ValueError(f"Bad version: {v}")
+        ints = tuple(int(p) for p in match.group('number').split('.'))
+        # Pad to 3 components so a shorter remote tuple (1, 4) compares equal
+        # to (1, 4, 0) rather than sorting as older.
+        return ints + (0,) * (3 - len(ints))
 
     try:
         site_v = parse_version(site_version)
     except (ValueError, AttributeError):
+        print(f"Warning: could not parse site version '{site_version}' from _config.yml")
         return None
 
     candidates = []
@@ -165,7 +234,7 @@ def fetch_bundle(version, language):
         print(f"Fetching bundle from {bundle_url}")
 
         with urllib.request.urlopen(bundle_url, timeout=30) as response:
-            bundle = json.loads(response.read().decode('utf-8'))
+            bundle = json.loads(capped_read(response, MAX_BUNDLE_BYTES).decode('utf-8'))
 
         meta = bundle.get('_meta', {})
         print(f"Bundle loaded:")
@@ -177,23 +246,23 @@ def fetch_bundle(version, language):
 
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            print(f"Error: Demo bundle for v{version}/{language} not found")
+            print(f"❌ Error: Demo bundle for v{version}/{language} not found")
             print(f"   URL: {bundle_url}")
         else:
-            print(f"HTTP Error {e.code}: {e.reason}")
+            print(f"❌ HTTP Error {e.code}: {e.reason}")
         return None
 
     except urllib.error.URLError as e:
-        print(f"Network error: {e.reason}")
+        print(f"❌ Network error: {e.reason}")
         print(f"   Could not connect to {base_url}")
         return None
 
     except json.JSONDecodeError as e:
-        print(f"Error: Invalid bundle JSON: {e}")
+        print(f"❌ Error: Invalid bundle JSON: {e}")
         return None
 
     except Exception as e:
-        print(f"Unexpected error fetching bundle: {e}")
+        print(f"❌ Unexpected error fetching bundle: {e}")
         return None
 
 
@@ -207,6 +276,26 @@ def save_bundle(bundle):
     Returns:
         bool: True if save succeeded, False otherwise
     """
+    # Minimal structure/size validation before persisting and merging a
+    # remotely-fetched bundle into site content.
+    REQUIRED_KEYS = {'_meta', 'objects', 'stories', 'project'}
+    missing = REQUIRED_KEYS - set(bundle.keys())
+    if missing:
+        print(f"❌ Demo bundle is missing expected keys: {missing}. Aborting.")
+        return False
+    for key in ('objects', 'stories', 'project'):
+        if not isinstance(bundle.get(key), (list, dict)):
+            print(f"❌ Demo bundle key '{key}' has unexpected type "
+                  f"{type(bundle.get(key)).__name__}. Aborting.")
+            return False
+    MAX_BUNDLE_ITEMS = 10_000
+    for key in ('objects', 'stories'):
+        val = bundle.get(key)
+        if isinstance(val, (list, dict)) and len(val) > MAX_BUNDLE_ITEMS:
+            print(f"❌ Demo bundle key '{key}' has suspiciously many entries "
+                  f"({len(val)}). Aborting.")
+            return False
+
     demo_dir = Path('_demo_content')
     bundle_path = demo_dir / 'telar-demo-bundle.json'
 
@@ -220,7 +309,7 @@ def save_bundle(bundle):
         return True
 
     except Exception as e:
-        print(f"Error saving bundle: {e}")
+        print(f"❌ Error saving bundle: {e}")
         return False
 
 

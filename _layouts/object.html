@@ -2,56 +2,77 @@
 layout: default
 ---
 
+{%- comment -%}
+  Object layout — the detail page for a single collection object, rendered inside
+  _layouts/default.html (the base page frame). One template serves all three media
+  types (Image, Video, Audio); the media type,
+  injected into frontmatter by generate_collections.py as `page.media_type`, switches which
+  viewer and which author-facing tools appear. The author tools are includes under
+  _includes/objects/, and the viewer wiring is in the per-type bundles built from
+  assets/js/object-page/; the shared pieces (the audio waveform's theme-colour maths, video
+  embed resolution, the IIIF viewer) live in assets/js/object-theme.js, assets/js/video-embed.js,
+  and assets/js/telar-story/iiif-viewer.js.
+
+  What it renders — a two-column layout: a viewer on the left and a metadata sidebar on the
+  right. The viewer branches by media type — an OpenSeadragon IIIF viewer for images (with a
+  collapsible "identify coordinates" panel that reports live x/y/zoom/page values for authors
+  building stories), an embedded YouTube/Vimeo/Google Drive iframe for video (with a clip-time
+  picker), or a vendored WaveSurfer waveform for audio (also with a clip picker). The sidebar
+  shows title, description, and a definition list of metadata (creator, period, medium,
+  dimensions, location, credit, plus any extra CSV columns surfaced via `page.extra_metadata`),
+  the IIIF manifest or provider/source/embed URLs, the object's long-form `{{ content }}`, and a
+  list of stories the object appears in.
+
+  Key context — `page.media_type` (defaults to Image) drives every branch; `page.object_id`
+  locates locally generated IIIF tiles and audio files; `page.source_url`/`page.iiif_manifest`
+  point at remote media; `lang` supplies all user-facing strings; `site.objects` is scanned to
+  find related stories. Author tooling strings live under `lang.object.coordinates` and
+  `lang.object.clip_picker`.
+
+  Non-obvious behaviour — object pages deliberately skip the full telar-story.js bundle (which
+  is story-only) and instead import the IIIF viewer wrapper directly from its ESM source, and
+  they re-enable OpenSeadragon's native scroll/click-to-zoom because there is no Lenis scroll
+  engine here to conflict with. URLs interpolated into inline scripts are jsonified and guarded
+  against `</script>` breakout, and only http(s) source URLs render as live links so a
+  javascript:/data: URL degrades to plain text. The clip pickers expose start/end times the
+  author copies into the story spreadsheet rather than playing media inline in a story.
+{%- endcomment -%}
+
 {% assign lang = site.data.languages[site.telar_language] | default: site.data.languages.en %}
 
-<!-- Bootstrap Icons -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+{% comment %}Detect media type from frontmatter (injected by generate_collections.py){% endcomment %}
+{% assign object_media_type = page.media_type | default: 'Image' %}
 
-<style>
-  /* Coordinator tools button styling */
-  .btn-developer {
-    background: #c8d8e8 !important;
-    color: #2c3e50 !important;
-    border: 1px solid #b0c8d8 !important;
-    font-weight: 600;
-    transition: all 0.2s ease;
-  }
+{%- comment -%}
+  Which way the author panels' ground runs. The panels sit on the theme's
+  button background, and their translucent wells and close icon differ on a
+  dark ground from a light one. That is decided once, at build time, by
+  scripts/telar/theme_colours.py: `light.button` is true when the colour it
+  derived to sit on that background is a light colour, which is the same as
+  saying the background is dark. The panels' own text colour is not decided
+  here at all — it is --color-on-button, the same property the button beside
+  them uses, so the two cannot disagree.
 
-  .btn-developer:hover {
-    background: #2c3e50 !important;
-    color: #fff !important;
-    border-color: #2c3e50 !important;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(44, 62, 80, 0.15);
-  }
+  A theme with no entry in the manifest takes trama's, as assets/css/telar.scss
+  does, and a manifest with neither takes the dark ground.
+{%- endcomment -%}
+{%- assign theme_colours = site.data['telar-build']['theme-colours'] -%}
+{%- assign theme_light = theme_colours.themes[site.telar_theme].light -%}
+{%- unless theme_light -%}
+  {%- assign theme_light = theme_colours.themes.trama.light -%}
+{%- endunless -%}
+{%- if theme_light.button == false -%}
+  {%- assign panel_ground = 'coord-light' -%}
+{%- else -%}
+  {%- assign panel_ground = 'coord-dark' -%}
+{%- endif -%}
 
-  .btn-developer i {
-    margin-right: 0.5rem;
-  }
-
-  /* Copy button styling */
-  .btn-copy {
-    background: #c8d8e8;
-    color: #2c3e50;
-    border: 1px solid #b0c8d8;
-    font-weight: 600;
-    transition: all 0.2s ease;
-  }
-
-  .btn-copy:hover {
-    background: #b0c8d8;
-    color: #2c3e50;
-    border-color: #98b8c8;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(44, 62, 80, 0.15);
-  }
-</style>
 
 <div class="container my-5">
   <div class="row">
     <div class="col-12">
       <a href="{{ '/objects/' | relative_url }}" class="btn btn-sm btn-outline-secondary mb-3">
-        ← Back to Collection
+        {{ lang.buttons.back_to_collection | default: "← Back to Collection" }}
       </a>
     </div>
   </div>
@@ -59,102 +80,33 @@ layout: default
   <div class="row">
     <!-- Object Viewer -->
     <div class="col-lg-8">
-      {% if page.object_warning and page.object_warning != "" %}
+      {% if page.object_warning and page.object_warning != "" and site['development-features'].hide_warnings != true %}
       <div class="alert alert-danger mb-3" role="alert">
-        <strong>⚠️ Image Viewer Unavailable</strong>
+        <strong>{{ lang.errors.image_viewer_unavailable | default: "⚠️ Image Viewer Unavailable" }}</strong>
         <p class="mb-0 mt-2">{{ page.object_warning | markdownify | remove: '<p>' | remove: '</p>' | strip }}</p>
       </div>
       {% endif %}
 
-      <div id="object-viewer" style="width: 100%; height: 600px; background: #000;"></div>
+      <div id="object-viewer" class="viewer-{{ object_media_type | downcase }}"
+           {% if object_media_type == 'Image' %}role="img" aria-label="{{ page.alt_text | default: page.title | default: page.object_id | default: 'Image viewer' }}"{% endif %}></div>
 
-      <!-- Coordinate Tools Button -->
-      {% if page.object_id %}
-      <div class="mt-3">
-        <div id="coordinateButton">
-          <button class="btn btn-developer btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#coordinatePanel" aria-expanded="false">
-            <i class="bi bi-search"></i> Identify coordinates
-          </button>
-        </div>
-
-        <!-- Collapsible Coordinate Panel -->
-        <div class="collapse" id="coordinatePanel">
-          <div class="card" style="background-color: #2c3e50; color: #c8d8e8; border-radius: 0; position: relative;">
-            <div class="card-body" style="padding-right: 3rem;">
-              <!-- Close Button -->
-              <button type="button" class="btn-close btn-close-white" data-bs-toggle="collapse" data-bs-target="#coordinatePanel" style="position: absolute; top: 0.5rem; right: 0.5rem;"></button>
-
-              <div class="row" style="padding-top: 1rem;">
-                <!-- Instructions -->
-                <div class="col-md-6">
-                  <div style="padding-left: 2rem;">
-                    <h6 style="color: #c8d8e8; font-weight: 600; margin-bottom: 1rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.875rem;">Instructions</h6>
-                    <p style="color: #c8d8e8; line-height: 1.6; margin-bottom: 0.5rem;">
-                      Use this panel to identify the coordinates of locations in an image for your story. Coordinates update as you pan/zoom the image above with your mouse by clicking, dragging, and scrolling.
-                    </p>
-                    <p style="color: #c8d8e8; line-height: 1.6; margin-bottom: 0;">
-                      Once you identify a location make a note of the X, Y, and Zoom values, so you can include them in your structure spreadsheet. You can also press the buttons to the right to copy all three coordinates at once.
-                    </p>
-                  </div>
-                </div>
-
-                <!-- Current Coordinates Table and Buttons -->
-                <div class="col-md-6">
-                  <div style="padding-top: 2rem;">
-                    <div style="max-width: 280px; margin: 0 auto;">
-                      <dl class="row mb-0">
-                        <dt class="col-sm-6" style="color: #c8d8e8; text-align: right; display: flex; align-items: center; justify-content: flex-end; margin-bottom: 0.5rem;">X</dt>
-                        <dd class="col-sm-6" style="position: relative; color: #c8d8e8; background-color: #1a252f; border: 1px solid #445566; padding: 0.25rem 0.5rem; border-radius: 4px; margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: center;">
-                          <code id="coord-x" style="color: #c8d8e8;">0.500</code>
-                          <button class="btn btn-sm" id="copy-x" style="position: absolute; top: 50%; right: 0.25rem; transform: translateY(-50%); background-color: #1a252f; color: #c8d8e8; border: none; padding: 0.125rem 0.25rem; font-size: 0.75rem;" title="Copy X coordinate">
-                            <i class="bi bi-clipboard"></i>
-                          </button>
-                        </dd>
-
-                        <dt class="col-sm-6" style="color: #c8d8e8; text-align: right; display: flex; align-items: center; justify-content: flex-end; margin-bottom: 0.5rem;">Y</dt>
-                        <dd class="col-sm-6" style="position: relative; color: #c8d8e8; background-color: #1a252f; border: 1px solid #445566; padding: 0.25rem 0.5rem; border-radius: 4px; margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: center;">
-                          <code id="coord-y" style="color: #c8d8e8;">0.500</code>
-                          <button class="btn btn-sm" id="copy-y" style="position: absolute; top: 50%; right: 0.25rem; transform: translateY(-50%); background-color: #1a252f; color: #c8d8e8; border: none; padding: 0.125rem 0.25rem; font-size: 0.75rem;" title="Copy Y coordinate">
-                            <i class="bi bi-clipboard"></i>
-                          </button>
-                        </dd>
-
-                        <dt class="col-sm-6" style="color: #c8d8e8; text-align: right; display: flex; align-items: center; justify-content: flex-end; margin-bottom: 0.5rem;">Zoom</dt>
-                        <dd class="col-sm-6" style="position: relative; color: #c8d8e8; background-color: #1a252f; border: 1px solid #445566; padding: 0.25rem 0.5rem; border-radius: 4px; margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: center;">
-                          <code id="coord-zoom" style="color: #c8d8e8;">1.0</code>
-                          <button class="btn btn-sm" id="copy-zoom" style="position: absolute; top: 50%; right: 0.25rem; transform: translateY(-50%); background-color: #1a252f; color: #c8d8e8; border: none; padding: 0.125rem 0.25rem; font-size: 0.75rem;" title="Copy Zoom level">
-                            <i class="bi bi-clipboard"></i>
-                          </button>
-                        </dd>
-
-                        <!-- Copy Button Rows -->
-                        <dt class="col-sm-6"></dt>
-                        <dd class="col-sm-6" style="margin-bottom: 0.5rem;">
-                          <button class="btn btn-sm btn-copy w-100" id="copy-coords-sheets">
-                            <i class="bi bi-clipboard"></i> {{ lang.object.coordinates.copy_sheets }}
-                          </button>
-                        </dd>
-
-                        <dt class="col-sm-6"></dt>
-                        <dd class="col-sm-6" style="margin-bottom: 0;">
-                          <button class="btn btn-sm btn-copy w-100" id="copy-coords-csv">
-                            <i class="bi bi-clipboard"></i> {{ lang.object.coordinates.copy_csv }}
-                          </button>
-                        </dd>
-                      </dl>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      {% endif %}
+      {%- comment -%}
+      The author tools for this type, and only this type. One case rather than
+      three ifs because they occupy the same slot and are mutually exclusive:
+      adding a type is a line here and a file in _includes/objects/tools/.
+      {%- endcomment -%}
+      {% case object_media_type %}
+        {% when 'Image' %}{% include objects/tools/image.html %}
+        {% when 'Video' %}{% include objects/tools/video.html %}
+        {% when 'Audio' %}{% include objects/tools/audio.html %}
+      {% endcase %}
     </div>
 
     <!-- Object Metadata -->
     <div class="col-lg-4">
+      {% if page.demo %}
+      <p class="object-demo-label">{{ lang.story.demo_label }}</p>
+      {% endif %}
       <h1>{{ page.title }}</h1>
 
       {% if page.description %}
@@ -163,58 +115,61 @@ layout: default
 
       <dl class="row mt-4">
         {% if page.creator %}
-        <dt class="col-sm-4">Creator</dt>
+        <dt class="col-sm-4">{{ lang.object.metadata.creator }}</dt>
         <dd class="col-sm-8">{{ page.creator }}</dd>
         {% endif %}
 
         {% if page.period %}
-        <dt class="col-sm-4">Period</dt>
+        <dt class="col-sm-4">{{ lang.object.metadata.period }}</dt>
         <dd class="col-sm-8">{{ page.period }}</dd>
         {% endif %}
 
         {% if page.medium %}
-        <dt class="col-sm-4">Medium</dt>
+        <dt class="col-sm-4">{{ lang.object.metadata.medium }}</dt>
         <dd class="col-sm-8">{{ page.medium }}</dd>
         {% endif %}
 
-        {% if page.dimensions %}
-        <dt class="col-sm-4">Dimensions</dt>
+        {% if page.dimensions and object_media_type == 'Image' %}
+        <dt class="col-sm-4">{{ lang.object.metadata.dimensions }}</dt>
         <dd class="col-sm-8">{{ page.dimensions }}</dd>
         {% endif %}
 
         {% if page.location %}
-        <dt class="col-sm-4">Location</dt>
+        <dt class="col-sm-4">{{ lang.object.metadata.location }}</dt>
         <dd class="col-sm-8">{{ page.location }}</dd>
         {% endif %}
 
         {% if page.credit %}
-        <dt class="col-sm-4">Credit</dt>
+        <dt class="col-sm-4">{{ lang.object.metadata.credit }}</dt>
         <dd class="col-sm-8">{{ page.credit }}</dd>
         {% endif %}
 
-        {% if page.iiif_manifest and page.iiif_manifest != "" %}
-        <dt class="col-sm-4">IIIF Manifest</dt>
-        <dd class="col-sm-8">
-          <div style="position: relative; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 0.5rem 3rem 0.5rem 0.75rem; overflow: hidden;">
-            <code style="color: #2c3e50; font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;">{{ page.iiif_manifest }}</code>
-            <button class="btn btn-sm" id="copy-manifest" data-manifest="{{ page.iiif_manifest }}" style="position: absolute; top: 50%; right: 0.5rem; transform: translateY(-50%); background-color: transparent; border: none; color: #2c3e50; padding: 0.25rem;" title="Copy manifest URL">
-              <i class="bi bi-clipboard"></i>
-            </button>
-          </div>
-        </dd>
-        {% elsif page.object_id %}
-        <dt class="col-sm-4">IIIF Manifest</dt>
-        <dd class="col-sm-8">
-          {% assign manifest_url = site.url | append: site.baseurl | append: '/iiif/objects/' | append: page.object_id | append: '/manifest.json' %}
-          <div style="position: relative; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 0.5rem 3rem 0.5rem 0.75rem; overflow: hidden;">
-            <code style="color: #2c3e50; font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;">{{ manifest_url }}</code>
-            <button class="btn btn-sm" id="copy-manifest" data-manifest="{{ manifest_url }}" style="position: absolute; top: 50%; right: 0.5rem; transform: translateY(-50%); background-color: transparent; border: none; color: #2c3e50; padding: 0.25rem;" title="Copy manifest URL">
-              <i class="bi bi-clipboard"></i>
-            </button>
-          </div>
-        </dd>
+        {% comment %} Custom metadata fields from extra columns in objects.csv {% endcomment %}
+        {% if page.extra_metadata %}
+        {% for field in page.extra_metadata %}
+        {% assign field_key = field[0] %}
+        {% assign field_value = field[1] %}
+        {% if lang.object.metadata[field_key] %}
+          {% assign field_label = lang.object.metadata[field_key] %}
+        {% else %}
+          {% assign field_label = field_key | replace: "_", " " | capitalize %}
         {% endif %}
+        <dt class="col-sm-4">{{ field_label }}</dt>
+        <dd class="col-sm-8">{{ field_value }}</dd>
+        {% endfor %}
+        {% endif %}
+
+        {%- comment -%}
+        Not a case like the tools above: the image rows belong inside this
+        shared <dl> and the other two bring their own, so each sits where its
+        markup has to sit.
+        {%- endcomment -%}
+        {% if object_media_type == 'Image' %}{% include objects/metadata/image.html %}{% endif %}
       </dl>
+
+      {% if object_media_type == 'Video' %}{% include objects/metadata/video.html %}{% endif %}
+
+      {% if object_media_type == 'Audio' %}{% include objects/metadata/audio.html %}{% endif %}
 
       <!-- Long Description -->
       {% if content %}
@@ -227,11 +182,11 @@ layout: default
       {% assign related_stories = site.stories | where_exp: "story", "story.objects contains page.object_id" %}
       {% if related_stories.size > 0 %}
       <div class="related-stories mt-4 pt-4 border-top">
-        <h3>Appears in Stories</h3>
+        <h3>{{ lang.object.metadata.appears_in_stories }}</h3>
         <ul class="list-unstyled">
           {% for story in related_stories %}
           <li class="mb-2">
-            <a href="{{ story.url | relative_url }}">{{ story.story_number }}. {{ story.title }}</a>
+            <a href="{{ story.url | relative_url }}">{{ story.title }}</a>
           </li>
           {% endfor %}
         </ul>
@@ -241,297 +196,100 @@ layout: default
   </div>
 </div>
 
-<!-- UniversalViewer IIIF Viewer -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/universalviewer@4.0.0/dist/uv.css">
-<script src="https://cdn.jsdelivr.net/npm/universalviewer@4.0.0/dist/umd/UV.js"></script>
-<script>
-  // Expose language strings to JavaScript
-  window.telarCoordLang = {
-    copied: "{{ lang.object.coordinates.copied }}"
-  };
+<!-- Object-page helpers: the audio waveform's theme-colour maths (audio only) and
+     video embed resolution (video only). Classic scripts — parsed before the
+     type's bundle below, so window.telarObjectTheme / window.telarVideoEmbed
+     are ready. -->
+{% if object_media_type == 'Video' %}
+<script src="{{ '/assets/js/video-embed.js' | relative_url }}"></script>
+{% endif %}
+{% if object_media_type == 'Image' %}
+<!-- IIIF viewer (OpenSeadragon — vendored, see assets/vendor/) -->
+<script src="{{ '/assets/vendor/openseadragon.min.js' | relative_url }}"></script>
+{% endif %}
+{% if object_media_type == 'Audio' %}
+<script src="{{ '/assets/js/object-theme.js' | relative_url }}"></script>
+<script src="{{ '/assets/js/wavesurfer-loader.js' | relative_url }}"></script>
+{% endif %}
 
-  document.addEventListener('DOMContentLoaded', function() {
-    {% if page.iiif_manifest and page.iiif_manifest != "" %}
-    const manifestUrl = '{{ page.iiif_manifest }}';
-    {% elsif page.object_id %}
-    const manifestUrl = '{{ site.baseurl }}/iiif/objects/{{ page.object_id }}/manifest.json';
-    {% else %}
-    console.error('No IIIF source specified');
-    return;
-    {% endif %}
+{%- comment -%}
+Everything the object page's JavaScript needs from Liquid, in one JSON block
+read by whichever of the object-<type>.js bundles this page loaded, all
+of them built from assets/js/object-page/.
+jsonify quotes and escapes each value; the replace guards against a
+</script> breakout from CSV-derived text. The iframe title and waveform
+label are HTML-escaped here because they land in attribute context.
 
-    console.log('Loading IIIF resource with UniversalViewer:', manifestUrl);
-
-    // Clear localStorage to prevent UV from restoring cached viewport state
-    try {
-      localStorage.removeItem('uv');
-      console.log('Cleared UV localStorage');
-    } catch (e) {
-      console.warn('Could not clear localStorage:', e);
-    }
-
-    // Clear URL hash to prevent UV from restoring previous viewport state
-    if (window.location.hash) {
-      console.log('Clearing URL hash to reset viewport');
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-    }
-
-    // Initialize UniversalViewer with IIIF manifest
-    // Use embedded: true to disable UV's state persistence
-    var urlAdaptor = new UV.IIIFURLAdaptor();
-    const data = urlAdaptor.getInitialData({
-      manifest: manifestUrl,
-      embedded: true  // true = disable state persistence in URL
-    });
-
-    var uv = UV.init('object-viewer', data);
-    // Don't bind urlAdaptor to prevent UV from updating URL with viewport state
-    // urlAdaptor.bindTo(uv);
-
-    // Store UV instance globally for coordinate tracking
-    window.uvInstance = uv;
-
-    // Set up coordinate tracking when UV is ready - use multiple attempts at different timings
-    uv.on('created', function() {
-      console.log('UV created event fired');
-
-      // Try immediately
-      setTimeout(function() {
-        console.log('First attempt to setup tracking (100ms)');
-        setupCoordinateTracking();
-      }, 100);
-
-      // Try again after 500ms
-      setTimeout(function() {
-        console.log('Second attempt to setup tracking (500ms)');
-        setupCoordinateTracking();
-      }, 500);
-
-      // And again after 2 seconds as fallback
-      setTimeout(function() {
-        console.log('Third attempt to setup tracking (2000ms)');
-        setupCoordinateTracking();
-      }, 2000);
-    });
-  });
-
-  // Coordinate tracking functionality
-  let osdViewer = null;
-  let updateInterval = null;
-
-  let trackingSetup = false;
-
-  function setupCoordinateTracking() {
-    // Try to access OpenSeadragon viewer from UniversalViewer
-    let viewer = null;
-    if (window.uvInstance && window.uvInstance._assignedContentHandler) {
-      if (window.uvInstance._assignedContentHandler.viewer) {
-        viewer = window.uvInstance._assignedContentHandler.viewer;
-      } else if (window.uvInstance._assignedContentHandler.extension) {
-        const ext = window.uvInstance._assignedContentHandler.extension;
-        if (ext.centerPanel && ext.centerPanel.viewer) {
-          viewer = ext.centerPanel.viewer;
-        }
-      }
-    }
-
-    if (!viewer) {
-      console.warn('Could not access OpenSeadragon viewer for coordinate tracking (viewer not ready yet)');
-      return;
-    }
-
-    // Store viewer reference globally
-    osdViewer = viewer;
-    console.log('Got OSD viewer reference, world items:', osdViewer.world.getItemCount());
-
-    // If no items loaded yet, we can set constraints before tiles load
-    if (osdViewer.world.getItemCount() === 0) {
-      console.log('No items loaded yet - setting up viewport for when image loads');
-
-      // Reset immediately when image opens
-      osdViewer.addHandler('open', function() {
-        console.log('OSD open event - forcing goHome()');
-        setTimeout(function() {
-          osdViewer.viewport.goHome(true);
-        }, 100);
-      });
-    } else {
-      // Items already loaded, force viewport to home
-      console.log('Items already loaded, forcing goHome()');
-      osdViewer.viewport.goHome(true);
-    }
-
-    // Set up event handlers only once
-    if (!trackingSetup) {
-      trackingSetup = true;
-      console.log('Setting up coordinate tracking event handlers');
-
-      // Listen for 'add-item' event to reset again after tiles load
-      osdViewer.world.addHandler('add-item', function() {
-        console.log('Image loaded (add-item event), resetting to home position');
-        setTimeout(function() {
-          osdViewer.viewport.goHome(true);
-        }, 50);
-      });
-
-      // Listen for 'open-failed' to catch any errors
-      osdViewer.addHandler('open-failed', function(event) {
-        console.error('OpenSeadragon open failed:', event);
-      });
-
-      // Add viewport change handlers
-      osdViewer.addHandler('animation', updateCoordinates);
-      osdViewer.addHandler('animation-finish', updateCoordinates);
-      osdViewer.addHandler('zoom', updateCoordinates);
-      osdViewer.addHandler('pan', updateCoordinates);
-
-      // Update periodically
-      updateInterval = setInterval(updateCoordinates, 500);
-
-      // Initial update
-      updateCoordinates();
-    }
+The audio file's extension is the build's to know: csv_to_json writes
+_data/audio_objects.json as it scans the objects directory, and story.html
+injects the same map as window.audioObjects. Reading it here is what keeps the
+object page from asking the server, one HEAD request per candidate extension,
+for a fact already written down.
+{%- endcomment -%}
+{%- assign audio_extension = site.data.audio_objects[page.object_id] -%}
+{%- if audio_extension -%}
+{%- assign audio_url = site.baseurl | append: '/telar-content/objects/' | append: page.object_id | append: '.' | append: audio_extension -%}
+{%- else -%}
+{%- assign audio_url = '' -%}
+{%- endif -%}
+{%- comment -%}
+The peaks file is Jekyll's to know rather than csv_to_json's. process_audio.py
+writes it, or the build restores it from the audio cache, after the data
+scripts have run and before Jekyll does, so the static files are the one list
+that holds it on every route. A page told there are no peaks does not request
+them, and WaveSurfer decodes the audio itself.
+{%- endcomment -%}
+{%- assign peaks_url = '' -%}
+{%- if audio_extension -%}
+{%- assign peaks_path = '/assets/audio/peaks/' | append: page.object_id | append: '.json' -%}
+{%- assign peaks_file = site.static_files | where: 'path', peaks_path | first -%}
+{%- if peaks_file -%}{%- assign peaks_url = site.baseurl | append: peaks_path -%}{%- endif -%}
+{%- endif -%}
+{% assign external_source = page.source_url | default: page.iiif_manifest %}
+{% assign escaped_title = page.title | escape %}
+{% assign video_frame_title = lang.object.video_frame_title | default: "Video: __TITLE__" | replace: '__TITLE__', escaped_title %}
+{% assign waveform_label = lang.object.audio_controls.waveform_label | default: "Audio waveform for __TITLE__" | replace: '__TITLE__', escaped_title %}
+<script id="telar-object-data" type="application/json">
+{
+  "mediaType": {{ object_media_type | jsonify }},
+  "objectId": {{ page.object_id | jsonify | replace: '</', '<\/' }},
+  "sourceUrl": {{ page.source_url | default: '' | jsonify | replace: '</', '<\/' }},
+  "externalSource": {{ external_source | default: '' | jsonify | replace: '</', '<\/' }},
+  "baseUrl": {{ site.baseurl | jsonify }},
+  "audioUrl": {{ audio_url | jsonify | replace: '</', '<\/' }},
+  "peaksUrl": {{ peaks_url | jsonify | replace: '</', '<\/' }},
+  "videoFrameTitle": {{ video_frame_title | jsonify | replace: '</', '<\/' }},
+  "waveformLabel": {{ waveform_label | jsonify | replace: '</', '<\/' }},
+  "lang": {
+    "copied": {{ lang.object.coordinates.copied | default: "Copied!" | jsonify }},
+    "viewer": {
+      "prev_page": {{ lang.object.viewer.prev_page | jsonify }},
+      "next_page": {{ lang.object.viewer.next_page | jsonify }},
+      "page_input_label": {{ lang.object.viewer.page_input_label | jsonify }},
+      "page_input_aria": {{ lang.object.viewer.page_input_aria | jsonify }},
+      "image_unavailable_title": {{ lang.object.viewer.image_unavailable_title | jsonify }},
+      "image_unavailable_detail": {{ lang.object.viewer.image_unavailable_detail | jsonify }}
+    },
+    "embedUnavailable": {{ lang.object.errors.embed_unavailable | default: "This video could not be loaded." | jsonify }},
+    "openOnDrive": {{ lang.object.errors.open_on_drive | default: "Open it on Google Drive." | jsonify }},
+    "audioNotFound": {{ lang.object.errors.audio_not_found | default: "Audio file not available." | jsonify }},
+    "play": {{ lang.object.audio_controls.play | default: "Play audio" | jsonify }},
+    "pause": {{ lang.object.audio_controls.pause | default: "Pause audio" | jsonify }},
+    "restart": {{ lang.object.audio_controls.restart | default: "Restart from beginning" | jsonify }},
+    "mute": {{ lang.object.audio_controls.mute | default: "Mute audio" | jsonify }},
+    "unmute": {{ lang.object.audio_controls.unmute | default: "Unmute audio" | jsonify }}
   }
-
-  function updateCoordinates() {
-    if (!osdViewer || !osdViewer.viewport) return;
-
-    try {
-      const viewport = osdViewer.viewport;
-      const center = viewport.getCenter();
-      const bounds = viewport.getHomeBounds();
-
-      // Convert to normalized 0-1 coordinates
-      const x = Math.max(0, Math.min(1, (center.x - bounds.x) / bounds.width));
-      const y = Math.max(0, Math.min(1, (center.y - bounds.y) / bounds.height));
-
-      // Get zoom relative to home zoom
-      const homeZoom = viewport.getHomeZoom();
-      const currentZoom = viewport.getZoom();
-      const zoom = Math.max(0.1, Math.min(10, currentZoom / homeZoom));
-
-      // Update display
-      document.getElementById('coord-x').textContent = x.toFixed(3);
-      document.getElementById('coord-y').textContent = y.toFixed(3);
-      document.getElementById('coord-zoom').textContent = zoom.toFixed(1);
-    } catch (error) {
-      console.error('Error updating coordinates:', error);
-    }
-  }
-
-  // Copy button functionality and panel visibility
-  document.addEventListener('DOMContentLoaded', function() {
-    // Hide/show button when panel opens/closes
-    const coordinatePanel = document.getElementById('coordinatePanel');
-    const coordinateButton = document.getElementById('coordinateButton');
-
-    if (coordinatePanel && coordinateButton) {
-      coordinatePanel.addEventListener('show.bs.collapse', function() {
-        coordinateButton.style.display = 'none';
-      });
-
-      coordinatePanel.addEventListener('hide.bs.collapse', function() {
-        coordinateButton.style.display = 'block';
-      });
-    }
-
-    // CSV format copy button (comma-separated)
-    document.getElementById('copy-coords-csv').addEventListener('click', function() {
-      const x = document.getElementById('coord-x').textContent;
-      const y = document.getElementById('coord-y').textContent;
-      const zoom = document.getElementById('coord-zoom').textContent;
-      const text = `${x},${y},${zoom}`;
-
-      navigator.clipboard.writeText(text).then(function() {
-        const btn = document.getElementById('copy-coords-csv');
-        const originalHTML = btn.innerHTML;
-        btn.innerHTML = '<i class="bi bi-check-circle"></i> ' + window.telarCoordLang.copied;
-        setTimeout(function() {
-          btn.innerHTML = originalHTML;
-        }, 2000);
-      });
-    });
-
-    // Sheets format copy button (tab-separated)
-    document.getElementById('copy-coords-sheets').addEventListener('click', function() {
-      const x = document.getElementById('coord-x').textContent;
-      const y = document.getElementById('coord-y').textContent;
-      const zoom = document.getElementById('coord-zoom').textContent;
-      const text = `${x}\t${y}\t${zoom}`;
-
-      navigator.clipboard.writeText(text).then(function() {
-        const btn = document.getElementById('copy-coords-sheets');
-        const originalHTML = btn.innerHTML;
-        btn.innerHTML = '<i class="bi bi-check-circle"></i> ' + window.telarCoordLang.copied;
-        setTimeout(function() {
-          btn.innerHTML = originalHTML;
-        }, 2000);
-      });
-    });
-
-    // Copy manifest URL button
-    const copyManifestBtn = document.getElementById('copy-manifest');
-    if (copyManifestBtn) {
-      copyManifestBtn.addEventListener('click', function() {
-        const manifestUrl = this.getAttribute('data-manifest');
-
-        navigator.clipboard.writeText(manifestUrl).then(function() {
-          const btn = document.getElementById('copy-manifest');
-          const originalHTML = btn.innerHTML;
-          btn.innerHTML = '<i class="bi bi-check-circle"></i>';
-          setTimeout(function() {
-            btn.innerHTML = originalHTML;
-          }, 2000);
-        }).catch(function(err) {
-          console.error('Failed to copy manifest URL:', err);
-        });
-      });
-    }
-
-    // Individual coordinate copy buttons
-    const copyXBtn = document.getElementById('copy-x');
-    if (copyXBtn) {
-      copyXBtn.addEventListener('click', function() {
-        const x = document.getElementById('coord-x').textContent;
-        navigator.clipboard.writeText(x).then(function() {
-          const btn = document.getElementById('copy-x');
-          const originalHTML = btn.innerHTML;
-          btn.innerHTML = '<i class="bi bi-check-circle"></i>';
-          setTimeout(function() {
-            btn.innerHTML = originalHTML;
-          }, 2000);
-        });
-      });
-    }
-
-    const copyYBtn = document.getElementById('copy-y');
-    if (copyYBtn) {
-      copyYBtn.addEventListener('click', function() {
-        const y = document.getElementById('coord-y').textContent;
-        navigator.clipboard.writeText(y).then(function() {
-          const btn = document.getElementById('copy-y');
-          const originalHTML = btn.innerHTML;
-          btn.innerHTML = '<i class="bi bi-check-circle"></i>';
-          setTimeout(function() {
-            btn.innerHTML = originalHTML;
-          }, 2000);
-        });
-      });
-    }
-
-    const copyZoomBtn = document.getElementById('copy-zoom');
-    if (copyZoomBtn) {
-      copyZoomBtn.addEventListener('click', function() {
-        const zoom = document.getElementById('coord-zoom').textContent;
-        navigator.clipboard.writeText(zoom).then(function() {
-          const btn = document.getElementById('copy-zoom');
-          const originalHTML = btn.innerHTML;
-          btn.innerHTML = '<i class="bi bi-check-circle"></i>';
-          setTimeout(function() {
-            btn.innerHTML = originalHTML;
-          }, 2000);
-        });
-      });
-    }
-  });
+}
 </script>
+{%- comment -%}
+One bundle per media type, so an audio page does not download the IIIF viewer
+and a video page does not download either of the others. The three are built
+from the same modules under assets/js/object-page/ and share its boot helper;
+only the entry differs. Adding a type is a line here and an entry beside the
+others.
+{%- endcomment -%}
+{% case object_media_type %}
+  {% when 'Image' %}<script src="{{ '/assets/js/object-image.js' | relative_url }}"></script>
+  {% when 'Video' %}<script src="{{ '/assets/js/object-video.js' | relative_url }}"></script>
+  {% when 'Audio' %}<script src="{{ '/assets/js/object-audio.js' | relative_url }}"></script>
+{% endcase %}
